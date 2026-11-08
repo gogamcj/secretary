@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' mediastream: blob:; connect-src 'self'" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>J.A.R.V.I.S.</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-state="idle">
+  <div class="bg-grid" aria-hidden="true"></div>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-title">J.A.R.V.I.S.</div>
+      <div class="brand-sub">JUST A RATHER VERY INTELLIGENT SYSTEM</div>
+    </div>
+    <div class="indicators" id="indicators">
+      <span class="ind" id="ind-claude"><i></i>CLAUDE</span>
+      <span class="ind" id="ind-google"><i></i>GOOGLE</span>
+      <span class="ind" id="ind-kakao"><i></i>KAKAO</span>
+      <span class="ind" id="ind-mic"><i></i>MIC</span>
+      <span class="ind" id="ind-voice"><i></i>VOICE</span>
+    </div>
+    <div class="clock">
+      <div id="clock-time">--:--</div>
+      <div id="clock-date">----</div>
+    </div>
+    <button class="icon-btn" id="btn-settings" title="설정" aria-label="설정">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </header>
+
+  <main class="stage">
+    <aside class="panel panel-left">
+      <div class="panel-head"><span>SCHEDULE</span><span class="panel-tag">알림</span></div>
+      <ul class="reminder-list" id="reminders"><li class="empty">예정된 알림이 없습니다</li></ul>
+      <div class="panel-head"><span>QUICK</span><span class="panel-tag">바로 말하기</span></div>
+      <div class="quick" id="quick">
+        <button data-q="오늘 일정 알려줘">오늘 일정</button>
+        <button data-q="안 읽은 메일 요약해줘">안 읽은 메일</button>
+        <button data-q="톡캘린더에 이번 주 일정 뭐 있어?">톡캘린더</button>
+        <button data-q="내가 기억해 달라고 한 것들 알려줘">기억 목록</button>
+      </div>
+    </aside>
+
+    <section class="core-wrap">
+      <canvas id="core" aria-label="자비스 코어"></canvas>
+      <div class="core-status">
+        <div class="status-main" id="status-main">STANDBY</div>
+        <div class="status-sub" id="status-sub">준비 중…</div>
+      </div>
+    </section>
+
+    <aside class="panel panel-right">
+      <div class="panel-head"><span>DIALOGUE</span><button class="link-btn" id="btn-reset" title="새 대화">새 대화</button></div>
+      <div class="log" id="log"></div>
+    </aside>
+  </main>
+
+  <footer class="command-bar">
+    <button class="mic-btn" id="btn-mic" title="말하기 (Alt+J)" aria-label="말하기">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    </button>
+    <form id="form" class="input-wrap" autocomplete="off">
+      <input id="input" type="text" placeholder="말씀하시거나 입력하세요…" />
+      <button type="submit" class="send-btn" aria-label="보내기">SEND</button>
+    </form>
+    <div class="hint" id="hint">"자비스"라고 부르거나 Alt+J</div>
+  </footer>
+
+  <dialog id="settings" class="settings">
+    <form method="dialog" id="settings-form">
+      <div class="settings-head">
+        <h2>SYSTEM SETTINGS</h2>
+        <button class="icon-btn" value="cancel" aria-label="닫기">✕</button>
+      </div>
+      <div class="settings-body">
+        <fieldset>
+          <legend>기본</legend>
+          <label>내 이름 (부르는 호칭)<input name="userName" placeholder="예: 지미" /></label>
+          <label>비서 이름<input name="assistantName" placeholder="자비스" /></label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Claude (두뇌)</legend>
+          <label>Claude API 키 <span class="badge" data-secret="anthropic"></span>
+            <input name="anthropic" type="password" placeholder="sk-ant-... (바꿀 때만 입력)" /></label>
+          <label>모델<input name="model" placeholder="claude-opus-5-5" /></label>
+          <label>생각 깊이
+            <select name="effort">
+              <option value="low">빠르게 (low, 추천)</option>
+              <option value="medium">보통 (medium)</option>
+              <option value="high">깊게 (high)</option>
+            </select>
+          </label>
+          <p class="help">API 키는 <a href="#" data-href="https://platform.claude.com/settings/keys">Claude 콘솔</a>에서 만들 수 있습니다. 키는 이 컴퓨터의 보안 저장소에 암호화되어 저장됩니다.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>음성</legend>
+          <label class="check"><input type="checkbox" name="wakeWordEnabled" /> "자비스" 호출어로 항상 듣기</label>
+          <label class="check"><input type="checkbox" name="ttsEnabled" /> 음성으로 답하기</label>
+          <label>음성 인식 모델
+            <select name="sttModel">
+              <option value="Xenova/whisper-base">빠름 (whisper-base)</option>
+              <option value="Xenova/whisper-small">균형 (whisper-small, 추천)</option>
+              <option value="onnx-community/whisper-large-v3-turbo">정확 (large-v3-turbo, 고사양)</option>
+            </select>
+          </label>
+          <label>말하기 속도<input name="ttsRate" type="number" min="0.6" max="1.6" step="0.05" /></label>
+        </fieldset>
+
+        <fieldset>
+          <legend>구글 (Gmail · 캘린더 · 문서) <span class="conn" id="conn-google"></span></legend>
+          <label>OAuth 클라이언트 ID<input name="googleClientId" placeholder="xxxx.apps.googleusercontent.com" /></label>
+          <label>클라이언트 보안 비밀 <span class="badge" data-secret="googleSecret"></span>
+            <input name="googleSecret" type="password" placeholder="GOCSPX-... (바꿀 때만 입력)" /></label>
+          <div class="row">
+            <button type="button" class="btn" id="btn-google">구글 연결</button>
+            <button type="button" class="btn ghost" id="btn-google-off">연결 해제</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>카카오 (나에게 보내기 · 톡캘린더) <span class="conn" id="conn-kakao"></span></legend>
+          <label>REST API 키<input name="kakaoRestKey" placeholder="카카오 Developers 앱의 REST API 키" /></label>
+          <label>Client Secret (사용 시) <span class="badge" data-secret="kakaoSecret"></span>
+            <input name="kakaoSecret" type="password" placeholder="(선택)" /></label>
+          <p class="help">카카오 Developers의 Redirect URI에 <code id="kakao-redirect">http://localhost:5781/oauth/kakao</code> 를 등록하세요.</p>
+          <div class="row">
+            <button type="button" class="btn" id="btn-kakao">카카오 연결</button>
+            <button type="button" class="btn ghost" id="btn-kakao-off">연결 해제</button>
+          </div>
+          <p class="help" id="kakao-desktop-help"></p>
+        </fieldset>
+
+        <fieldset>
+          <legend>안전</legend>
+          <label class="check"><input type="checkbox" name="confirmRiskyActions" /> 메일·카톡 보내기, 명령 실행, 일정 삭제 전에 확인 창 띄우기</label>
+          <label>문서 저장 폴더<input name="documentsDir" placeholder="비우면 문서/Jarvis" /></label>
+        </fieldset>
+      </div>
+      <div class="settings-foot">
+        <span class="save-msg" id="save-msg"></span>
+        <button type="button" class="btn primary" id="btn-save">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="hud.js"></script>
+  <script src="voice.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

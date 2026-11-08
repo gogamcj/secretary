@@ -1,0 +1,71 @@
+{
+  "name": "jarvis",
+  "productName": "JARVIS",
+  "version": "0.1.0",
+  "description": "Windows·Mac용 자비스 스타일 개인비서 (음성, 메일, 캘린더, 카카오톡, PC 제어)",
+  "main": "src/main/main.js",
+  "author": "jimi",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
+    "@huggingface/transformers": "^4.3.2",
+    "docx": "^9.5.1"
+  },
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.jimi.jarvis",
+    "productName": "JARVIS",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/**",
+      "node_modules/@huggingface/transformers/**",
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "자비스가 음성 명령을 듣기 위해 마이크를 사용합니다.",
+        "NSAppleEventsUsageDescription": "자비스가 다른 앱(카카오톡 등)을 조작하기 위해 사용합니다."
+      }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
