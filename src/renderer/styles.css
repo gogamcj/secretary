@@ -161,11 +161,11 @@ fieldset { border: 1px solid var(--border); border-radius: 3px; margin: 12px 0 0
 legend { color: var(--cyan); font-size: 13px; padding: 0 6px; }
 .settings label { display: block; font-size: 12px; color: var(--text-dim); margin-top: 10px; }
 .settings label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; }
-.settings input[type="text"], .settings input:not([type]), .settings input[type="password"], .settings input[type="number"], .settings select {
+.settings input[type="text"], .settings input:not([type]), .settings input[type="password"], .settings input[type="number"], .settings select, .settings textarea {
   display: block; width: 100%; margin-top: 4px; background: #071728; border: 1px solid var(--border); color: var(--text);
   padding: 9px 10px; border-radius: 3px; font-size: 13px; font-family: var(--font);
 }
-.settings input:focus, .settings select:focus { outline: 1px solid var(--cyan); }
+.settings input:focus, .settings select:focus, .settings textarea:focus { outline: 1px solid var(--cyan); }
 .help { font-size: 12px; color: var(--text-dim); margin: 10px 0 0; line-height: 1.5; }
 .help a { color: var(--cyan-2); }
 .help code { color: var(--cyan-2); font-family: var(--mono); font-size: 11px; }
@@ -186,3 +186,4 @@ legend { color: var(--cyan); font-size: 13px; padding: 0 6px; }
   .panel-left { display: none; }
   .hint { display: none; }
 }
+.settings textarea { resize: vertical; }

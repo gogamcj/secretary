@@ -94,6 +94,12 @@ const DEFAULT_SETTINGS = {
   sttCloudModel: 'gpt-4o-mini-transcribe',
   fastMode: false,
   ttsEnabled: true,
+  ttsProvider: 'system', // system | openai | elevenlabs
+  ttsVoice: 'onyx',
+  ttsCloudModel: 'gpt-4o-mini-tts',
+  ttsInstructions: '',
+  elevenVoiceId: '',
+  elevenModel: 'eleven_multilingual_v2',
   ttsRate: 1.05,
   documentsDir: '',
   confirmRiskyActions: true,

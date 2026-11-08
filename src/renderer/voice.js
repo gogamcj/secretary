@@ -144,10 +144,52 @@
   }
 
   // 문장 단위 음성 대기열: 답변이 스트리밍으로 오는 동안 완성된 문장부터 바로 읽습니다.
+  // 클라우드 음성(사람 같은 목소리)이면 다음 문장 음성을 미리 받아 두어 끊김 없이 이어 읽습니다.
   const queue = [];
   let speakingNow = false;
   let idleWaiters = [];
   let rate = 1.05;
+  let provider = 'system'; // system | cloud
+  let generation = 0;
+  let currentAudio = null;
+  let onCloudError = () => {};
+
+  function finishItem(gen) {
+    if (gen !== generation) return;
+    speakingNow = false;
+    currentAudio = null;
+    pump();
+  }
+
+  function speakSystem(text, gen) {
+    if (!('speechSynthesis' in window)) return finishItem(gen);
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ko-KR';
+    if (voice) u.voice = voice;
+    u.rate = rate;
+    u.onend = () => finishItem(gen);
+    u.onerror = () => finishItem(gen);
+    speechSynthesis.speak(u);
+  }
+
+  async function speakCloud(item, gen) {
+    const res = await item.audio;
+    if (gen !== generation) return;
+    if (!res || !res.ok) {
+      onCloudError(res?.error || '알 수 없는 오류');
+      return speakSystem(item.text, gen); // 실패하면 기본 음성으로라도 읽기
+    }
+    const url = URL.createObjectURL(new Blob([res.data], { type: res.mime }));
+    const audio = new Audio(url);
+    currentAudio = audio;
+    const done = () => {
+      URL.revokeObjectURL(url);
+      finishItem(gen);
+    };
+    audio.onended = done;
+    audio.onerror = done;
+    audio.play().catch(done);
+  }
 
   function pump() {
     if (speakingNow) return;
@@ -158,25 +200,21 @@
       return;
     }
     speakingNow = true;
-    const u = new SpeechSynthesisUtterance(next);
-    u.lang = 'ko-KR';
-    if (voice) u.voice = voice;
-    u.rate = rate;
-    const done = () => {
-      speakingNow = false;
-      pump();
-    };
-    u.onend = done;
-    u.onerror = done;
-    speechSynthesis.speak(u);
+    const gen = generation;
+    if (next.audio) speakCloud(next, gen);
+    else speakSystem(next.text, gen);
   }
 
   function enqueue(text, r) {
-    if (!('speechSynthesis' in window)) return;
     if (r) rate = r;
     const clean = cleanForSpeech(text);
     if (!clean) return;
-    for (const part of clean.match(/[^.!?。\n]+[.!?。]?/g) || [clean]) if (part.trim()) queue.push(part.trim());
+    for (const part of clean.match(/[^.!?。\n]+[.!?。]?/g) || [clean]) {
+      const t = part.trim();
+      if (!t) continue;
+      // 클라우드 음성은 바로 요청을 시작해 두고(미리 받기), 순서대로 재생합니다.
+      queue.push({ text: t, audio: provider === 'cloud' && window.jarvis ? window.jarvis.tts(t) : null });
+    }
     pump();
   }
 
@@ -191,8 +229,13 @@
   }
 
   function stopSpeaking() {
+    generation++;
     queue.length = 0;
     speakingNow = false;
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio = null;
+    }
     if ('speechSynthesis' in window) speechSynthesis.cancel();
     idleWaiters.forEach((r) => r());
     idleWaiters = [];
@@ -230,6 +273,12 @@
     },
     setPaused(p) {
       paused = p;
+    },
+    setTtsProvider(p) {
+      provider = p === 'system' ? 'system' : 'cloud';
+    },
+    onCloudError(cb) {
+      onCloudError = cb;
     },
     setMaxSegment(ms) {
       maxSegmentMs = ms;

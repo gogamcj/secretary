@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Notification, glo
 
 const store = require('./store');
 const stt = require('./stt');
+const tts = require('./tts');
 const { Agent } = require('./agent');
 const memory = require('./tools/memory');
 const reminders = require('./tools/reminders');
@@ -133,6 +134,15 @@ function registerIpc() {
     }
   });
 
+  ipcMain.handle('tts', async (_e, text) => {
+    try {
+      const { mime, data } = await tts.synthesize(String(text || '').slice(0, 1500));
+      return { ok: true, mime, data: new Uint8Array(data) };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
   ipcMain.handle('wake:strip', (_e, text) => stt.stripWakeWord(String(text || ''), wakeWords()));
 
   ipcMain.handle('conversation:reset', () => {
@@ -147,7 +157,9 @@ function registerIpc() {
       googleSecret: !!store.getSecret('google_client_secret'),
       kakaoSecret: !!store.getSecret('kakao_client_secret'),
       openai: !!store.getSecret('openai_api_key'),
+      elevenlabs: !!store.getSecret('elevenlabs_api_key'),
     },
+    ttsDefaultInstructions: tts.DEFAULT_INSTRUCTIONS,
     connections: connections(),
     platform: process.platform,
     hotkey: HOTKEY,
@@ -161,6 +173,7 @@ function registerIpc() {
     if (typeof secrets.googleSecret === 'string' && secrets.googleSecret) store.setSecret('google_client_secret', secrets.googleSecret.trim());
     if (typeof secrets.kakaoSecret === 'string' && secrets.kakaoSecret) store.setSecret('kakao_client_secret', secrets.kakaoSecret.trim());
     if (typeof secrets.openai === 'string' && secrets.openai) store.setSecret('openai_api_key', secrets.openai.trim());
+    if (typeof secrets.elevenlabs === 'string' && secrets.elevenlabs) store.setSecret('elevenlabs_api_key', secrets.elevenlabs.trim());
     // 바뀐 음성 모델을 미리 불러 둡니다
     stt.getPipe(localSttModel(), (pct, file) => send('stt-progress', { pct, file })).then(
       () => send('stt-progress', { pct: 100, ready: true }),

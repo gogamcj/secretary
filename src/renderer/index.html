@@ -127,6 +127,34 @@
           </label>
           <p class="help">OpenAI 키는 <a href="#" data-href="https://platform.openai.com/api-keys">OpenAI 콘솔</a>에서 만들 수 있습니다. 클라우드 방식에서도 "자비스" 호출어 감지는 내 컴퓨터에서 하고, 호출어가 들린 말만 클라우드로 보냅니다.</p>
           <label>말하기 속도<input name="ttsRate" type="number" min="0.6" max="1.6" step="0.05" /></label>
+          <label>자비스 목소리
+            <select name="ttsProvider">
+              <option value="system">기본 컴퓨터 음성 (무료)</option>
+              <option value="openai">OpenAI 사람 같은 음성 (위 OpenAI 키 사용, 아주 저렴)</option>
+              <option value="elevenlabs">ElevenLabs 가장 사람 같은 음성 (별도 가입)</option>
+            </select>
+          </label>
+          <label>OpenAI 목소리
+            <select name="ttsVoice">
+              <option value="onyx">onyx · 낮고 묵직한 남성 (자비스 추천)</option>
+              <option value="ash">ash · 차분한 남성</option>
+              <option value="echo">echo · 부드러운 남성</option>
+              <option value="ballad">ballad · 따뜻한 남성</option>
+              <option value="verse">verse · 생기 있는 남성</option>
+              <option value="sage">sage · 차분한 중성</option>
+              <option value="alloy">alloy · 중성</option>
+              <option value="fable">fable · 이야기꾼</option>
+              <option value="coral">coral · 밝은 여성</option>
+              <option value="nova">nova · 활기찬 여성</option>
+              <option value="shimmer">shimmer · 부드러운 여성</option>
+            </select>
+          </label>
+          <label>OpenAI 음성 모델<input name="ttsCloudModel" placeholder="gpt-4o-mini-tts" /></label>
+          <label>말투 지시 (비우면 기본 자비스 말투)<textarea name="ttsInstructions" rows="2"></textarea></label>
+          <label>ElevenLabs API 키 <span class="badge" data-secret="elevenlabs"></span>
+            <input name="elevenlabs" type="password" placeholder="(바꿀 때만 입력)" /></label>
+          <label>ElevenLabs 목소리 ID (비우면 기본 남성 음성)<input name="elevenVoiceId" placeholder="JBFqnCBsd6RMkjVDRZzb" /></label>
+          <p class="help">ElevenLabs 키는 <a href="#" data-href="https://elevenlabs.io/app/settings/api-keys">ElevenLabs 설정</a>에서, 목소리 ID는 <a href="#" data-href="https://elevenlabs.io/app/voice-library">음성 라이브러리</a>에서 마음에 드는 목소리를 골라 복사하세요. 클라우드 음성이 실패하면 기본 음성으로 대신 읽습니다.</p>
         </fieldset>
 
         <fieldset>

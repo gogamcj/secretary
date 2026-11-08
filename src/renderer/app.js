@@ -289,9 +289,9 @@
 
   // ---------- 설정 ----------
   const form = $('settings-form');
-  const FIELDS = ['userName', 'assistantName', 'model', 'effort', 'sttProvider', 'sttModel', 'sttCloudModel', 'ttsRate', 'googleClientId', 'kakaoRestKey', 'documentsDir'];
+  const FIELDS = ['userName', 'assistantName', 'model', 'effort', 'sttProvider', 'sttModel', 'sttCloudModel', 'ttsRate', 'ttsProvider', 'ttsVoice', 'ttsCloudModel', 'ttsInstructions', 'elevenVoiceId', 'googleClientId', 'kakaoRestKey', 'documentsDir'];
   const CHECKS = ['wakeWordEnabled', 'ttsEnabled', 'confirmRiskyActions', 'fastMode'];
-  const SECRETS = ['anthropic', 'googleSecret', 'kakaoSecret', 'openai'];
+  const SECRETS = ['anthropic', 'googleSecret', 'kakaoSecret', 'openai', 'elevenlabs'];
 
   async function loadSettings() {
     const data = await api.getSettings();
@@ -313,6 +313,8 @@
       data.platform === 'darwin'
         ? '친구·단톡방에 카톡을 보내려면 Mac에 kmsg를 설치하세요: 터미널에서 brew install channprj/tap/kmsg (손쉬운 사용 권한 필요)'
         : '친구·단톡방에 카톡을 보내려면 카카오톡 PC 앱을 켜고 로그인한 채로 두세요.';
+    form.elements.ttsInstructions.placeholder = data.ttsDefaultInstructions || '';
+    window.Voice.setTtsProvider(settings.ttsProvider);
     setInd('ind-claude', data.secrets.anthropic, true);
     setInd('ind-google', data.connections.google);
     setInd('ind-kakao', data.connections.kakao);
@@ -421,6 +423,12 @@
   (async function boot() {
     tickClock();
     setInterval(tickClock, 1000 * 10);
+    let cloudErrShown = false;
+    window.Voice.onCloudError((msg) => {
+      if (cloudErrShown) return;
+      cloudErrShown = true;
+      addLog('system', `사람 같은 음성을 불러오지 못해 기본 음성으로 읽었어요. (${msg})`);
+    });
     const data = await loadSettings();
     refreshReminders();
     setInterval(refreshReminders, 60 * 1000);
