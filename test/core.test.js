@@ -99,3 +99,31 @@ test('에이전트 오류 시 대화 기록 되돌림', async () => {
   await assert.rejects(agent.ask('안녕'), /네트워크 끊김/);
   assert.equal(agent.messages.length, 0);
 });
+
+test('시스템 프롬프트는 대화 중 바뀌지 않고, 바뀌는 정보는 사용자 메시지에 들어감', async () => {
+  const calls = [];
+  const agent = new Agent({ tools: [], confirm: async () => true });
+  agent.getClient = () => ({ beta: { messages: { create: async (p) => (calls.push(structuredClone(p)), { stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '', signature: 's' }, { type: 'text', text: '네' }] }) } } });
+  await agent.ask('첫 번째', { google: false });
+  memory.addMemory('대화 중 새로 생긴 기억');
+  store.saveSettings({ userName: '바뀐이름' });
+  await agent.ask('두 번째', { google: true });
+  assert.deepEqual(calls[0].system, calls[1].system);
+  assert.match(calls[1].messages.at(-1).content[0].text, /대화 중 새로 생긴 기억/);
+  assert.equal(calls[1].messages.at(-1).content[1].text, '두 번째');
+});
+
+test('생각 블록 서명 오류가 나면 새 대화로 한 번 재시도', async () => {
+  const AnthropicSDK = require('@anthropic-ai/sdk');
+  const agent = new Agent({ tools: [], confirm: async () => true });
+  agent.messages = [{ role: 'user', content: '예전' }, { role: 'assistant', content: [{ type: 'text', text: '예전 답' }] }];
+  let n = 0;
+  agent.getClient = () => ({ beta: { messages: { create: async (p) => {
+    n++;
+    if (n === 1) throw new AnthropicSDK.BadRequestError(400, { error: { message: 'Invalid `signature` in `thinking` block' } }, 'Invalid `signature` in `thinking` block', new Headers());
+    assert.equal(p.messages.length, 1);
+    return { stop_reason: 'end_turn', content: [{ type: 'text', text: '복구됨' }] };
+  } } } });
+  assert.equal(await agent.ask('안녕'), '복구됨');
+  assert.equal(n, 2);
+});

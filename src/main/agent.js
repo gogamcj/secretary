@@ -27,6 +27,7 @@ class Agent {
     this.confirm = confirm; // async (message) => boolean
     this.onStatus = onStatus || (() => {});
     this.messages = [];
+    this.system = null;
     this.client = null;
     this.clientKey = '';
   }
@@ -43,23 +44,29 @@ class Agent {
 
   reset() {
     this.messages = [];
+    this.system = null;
   }
 
-  systemPrompt(settings, connections) {
+  // 시스템 프롬프트는 한 대화 동안 절대 바뀌면 안 됩니다.
+  // (Claude의 생각 블록은 만들어질 때의 시스템 프롬프트에 묶여 있어서, 바뀌면 400 오류가 납니다.)
+  // 그래서 시각·연결 상태·기억처럼 바뀌는 정보는 매 요청의 사용자 메시지 앞에 붙입니다.
+  systemPrompt(settings) {
     const persona = PERSONA.replace('{NAME}', settings.assistantName || '자비스').replace('{USER}', settings.userName ? `${settings.userName}님` : '주인님');
+    return [{ type: 'text', text: persona, cache_control: { type: 'ephemeral' } }];
+  }
+
+  contextBlock(connections) {
     const now = new Date();
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const osName = process.platform === 'darwin' ? 'macOS' : process.platform === 'win32' ? 'Windows' : process.platform;
-    const dynamic = [
+    return [
+      '<context>',
       `현재 시각: ${now.toLocaleString('ko-KR', { dateStyle: 'full', timeStyle: 'short' })} (${tz}, ISO ${now.toISOString()})`,
       `컴퓨터: ${osName}, 홈 폴더 ${os.homedir()}`,
       `연결 상태: 구글 ${connections.google ? '연결됨' : '미연결'}, 카카오 ${connections.kakao ? '연결됨' : '미연결'}`,
       `기억:\n${memory.memoryDigest()}`,
+      '</context>',
     ].join('\n');
-    return [
-      { type: 'text', text: persona, cache_control: { type: 'ephemeral' } },
-      { type: 'text', text: dynamic },
-    ];
   }
 
   toolDefs() {
@@ -88,11 +95,35 @@ class Agent {
 
   /** 사용자 말 한 번을 처리하고 자비스의 답변 텍스트를 돌려줍니다. */
   async ask(userText, connections = {}) {
+    try {
+      return await this.askOnce(userText, connections);
+    } catch (e) {
+      // 이전 대화의 생각 블록이 더 이상 유효하지 않으면 새 대화로 한 번 다시 시도합니다.
+      if (e instanceof AnthropicSDK.BadRequestError && /thinking|signature/i.test(e.message) && this.messages.length) {
+        this.reset();
+        try {
+          return await this.askOnce(userText, connections);
+        } catch (e2) {
+          throw new Error(friendlyError(e2));
+        }
+      }
+      throw new Error(friendlyError(e));
+    }
+  }
+
+  async askOnce(userText, connections) {
     const settings = store.getSettings();
     const client = this.getClient();
     if (this.messages.length > MAX_HISTORY_MESSAGES) this.reset(); // 너무 길어지면 새 대화로 (기억은 유지)
+    if (!this.system || this.messages.length === 0) this.system = this.systemPrompt(settings);
     const startLen = this.messages.length;
-    this.messages.push({ role: 'user', content: userText });
+    this.messages.push({
+      role: 'user',
+      content: [
+        { type: 'text', text: this.contextBlock(connections) },
+        { type: 'text', text: userText },
+      ],
+    });
 
     try {
       for (let turn = 0; turn < MAX_TURNS_PER_REQUEST; turn++) {
@@ -104,7 +135,7 @@ class Agent {
           fallbacks: 'default',
           thinking: { type: 'adaptive' },
           output_config: { effort: settings.effort || 'low' },
-          system: this.systemPrompt(settings, connections),
+          system: this.system,
           tools: this.toolDefs(),
           messages: this.messages,
         });
@@ -139,7 +170,7 @@ class Agent {
     } catch (e) {
       // 실패한 요청은 대화 기록에서 되돌려, 다음 요청이 깨지지 않게 합니다.
       this.messages.length = startLen;
-      throw new Error(friendlyError(e));
+      throw e;
     }
   }
 }
@@ -148,7 +179,7 @@ function friendlyError(e) {
   if (e instanceof AnthropicSDK.AuthenticationError) return 'Claude API 키가 올바르지 않아요. 설정에서 다시 확인해 주세요.';
   if (e instanceof AnthropicSDK.PermissionDeniedError) return 'Claude API 사용 권한이 없어요. 키와 계정 상태를 확인해 주세요.';
   if (e instanceof AnthropicSDK.RateLimitError) return '요청이 많아 잠시 제한됐어요. 조금 뒤에 다시 말씀해 주세요.';
-  if (e instanceof AnthropicSDK.BadRequestError) return `요청 형식 오류: ${e.message}`;
+  if (e instanceof AnthropicSDK.BadRequestError) return `요청을 처리하지 못했어요. 화면 오른쪽 위 \"새 대화\"를 누르고 다시 말씀해 주세요. (${(e.error?.error?.message || e.message).slice(0, 160)})`;
   if (e instanceof AnthropicSDK.InternalServerError) return 'Claude 서버에 일시적인 문제가 있어요. 잠시 후 다시 시도해 주세요.';
   if (e instanceof AnthropicSDK.APIConnectionError) return '인터넷 연결을 확인해 주세요. Claude에 연결하지 못했어요.';
   return e?.message || String(e);
