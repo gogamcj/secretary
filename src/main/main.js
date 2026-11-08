@@ -71,6 +71,8 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      autoplayPolicy: 'no-user-gesture-required',
+      backgroundThrottling: false,
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));

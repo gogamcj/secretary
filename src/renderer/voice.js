@@ -6,7 +6,7 @@
   const PRE_ROLL_FRAMES = 5; // 말 시작 전 320ms 포함
   const END_SILENCE_MS = 650;
   const MIN_SPEECH_MS = 350;
-  const MAX_SEGMENT_MS = 15000;
+  let maxSegmentMs = 10000;
 
   let ctx = null;
   let stream = null;
@@ -17,6 +17,8 @@
   let onSpeechStart = () => {};
 
   let noiseFloor = 0.004;
+  let peak = 0;
+  let lastLevel = 0;
   let speaking = false;
   let speechFrames = 0;
   let silenceMs = 0;
@@ -42,9 +44,12 @@
 
   function handleFrame(frame) {
     const level = rms(frame);
-    const threshold = Math.max(0.012, noiseFloor * 3.2);
+    // 주변 소음 수준을 항상 따라갑니다: 조용해지면 빨리 내려가고, 시끄러워지면 천천히 올라갑니다.
+    // (예전에는 말소리로 판단된 동안 갱신하지 않아서, 선풍기·컴퓨터 팬 소리가 있으면 말이 끝나지 않은 것으로 착각했습니다.)
+    noiseFloor = level < noiseFloor ? noiseFloor * 0.9 + level * 0.1 : noiseFloor * 0.995 + level * 0.005;
+    const threshold = Math.max(0.006, noiseFloor * 2.2 + 0.003);
     const isSpeech = level > threshold;
-    if (!speaking && !isSpeech) noiseFloor = noiseFloor * 0.97 + level * 0.03;
+    lastLevel = level;
 
     if (paused) {
       speaking = false;
@@ -60,6 +65,7 @@
       if (speechFrames >= 2) {
         speaking = true;
         silenceMs = 0;
+        peak = level;
         segment = [...preRoll];
         preRoll.length = 0;
         onSpeechStart();
@@ -68,9 +74,12 @@
     }
 
     segment.push(frame);
-    silenceMs = isSpeech ? 0 : silenceMs + FRAME_MS;
+    peak = Math.max(peak, level);
+    // 말하는 동안 가장 컸던 소리의 15%보다 작아지면 조용해진 것으로 봅니다.
+    const quiet = !isSpeech || level < peak * 0.15;
+    silenceMs = quiet ? silenceMs + FRAME_MS : 0;
     const lengthMs = segment.length * FRAME_MS;
-    if (silenceMs >= END_SILENCE_MS || lengthMs >= MAX_SEGMENT_MS) {
+    if (silenceMs >= END_SILENCE_MS || lengthMs >= maxSegmentMs) {
       speaking = false;
       speechFrames = 0;
       const audio = concat(segment);
@@ -85,6 +94,8 @@
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
     ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+    // 오디오가 '일시정지' 상태로 시작하면 마이크 소리가 전혀 들어오지 않으므로 꼭 깨웁니다.
+    if (ctx.state !== 'running') await ctx.resume().catch(() => {});
     const src = ctx.createMediaStreamSource(stream);
     analyser = ctx.createAnalyser();
     analyser.fftSize = 1024;
@@ -219,6 +230,16 @@
     },
     setPaused(p) {
       paused = p;
+    },
+    setMaxSegment(ms) {
+      maxSegmentMs = ms;
+    },
+    async wake() {
+      if (ctx && ctx.state !== 'running') await ctx.resume().catch(() => {});
+      return ctx ? ctx.state : 'none';
+    },
+    get level() {
+      return lastLevel;
     },
     onSegment(cb) {
       onSegment = cb;

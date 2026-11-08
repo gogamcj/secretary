@@ -38,7 +38,8 @@
   let mode = 'off'; // off | wake | command
   let busy = false;
   let commandTimer = null;
-  let queue = Promise.resolve();
+  let sttReady = false;
+  let heardTimer = null;
 
   // ---------- 화면 ----------
   function setState(state, main, sub) {
@@ -101,6 +102,7 @@
 
   // ---------- 음성 흐름 ----------
   function baseMode() {
+    window.Voice.setMaxSegment?.(7000);
     return settings.wakeWordEnabled && window.Voice.active ? 'wake' : 'off';
   }
 
@@ -110,25 +112,63 @@
       return;
     }
     window.Voice.stopSpeaking();
+    window.Voice.wake();
     mode = 'command';
+    window.Voice.setMaxSegment(12000);
     window.Voice.chime(true);
     idleState();
+    if (!sttReady) $('status-sub').textContent = '음성 인식 모델을 준비 중이에요. 첫 명령은 조금 느릴 수 있어요…';
+    armCommandTimer();
+  }
+
+  function armCommandTimer() {
     clearTimeout(commandTimer);
     commandTimer = setTimeout(() => {
-      if (mode === 'command' && !busy) {
+      if (mode === 'command' && !busy && !transcribing) {
         mode = baseMode();
+        window.Voice.setMaxSegment(7000);
         idleState();
       }
     }, 8000);
   }
 
-  async function handleSegment(audio) {
-    if (busy || mode === 'off') return;
-    const wasCommand = mode === 'command';
-    if (wasCommand) {
+  // 들어온 음성 구간 처리: 한 번에 하나씩, 밀린 것은 최신 것만 남깁니다.
+  // (예전에는 주변 소리까지 전부 줄을 세워 처리해서, 명령이 그 뒤에서 한참 기다리는 문제가 있었습니다.)
+  let pending = null;
+  let transcribing = false;
+
+  function onSegmentCaptured(audio) {
+    const captured = { audio, mode };
+    if (captured.mode === 'off' || busy) return;
+    if (captured.mode === 'command') {
       clearTimeout(commandTimer);
-      setState('thinking', 'PROCESSING', '음성을 알아듣는 중…');
+      pending = captured; // 명령은 항상 우선
+    } else if (!pending || pending.mode !== 'command') {
+      pending = captured;
     }
+    pumpSegments();
+  }
+
+  async function pumpSegments() {
+    if (transcribing || !pending) return;
+    const job = pending;
+    pending = null;
+    transcribing = true;
+    try {
+      await handleSegment(job.audio, job.mode);
+    } catch (e) {
+      addLog('error', e.message);
+    } finally {
+      transcribing = false;
+      if (mode === 'command' && !busy) armCommandTimer();
+    }
+    pumpSegments();
+  }
+
+  async function handleSegment(audio, capturedMode) {
+    if (busy) return;
+    const wasCommand = capturedMode === 'command';
+    if (wasCommand) setState('thinking', 'PROCESSING', sttReady ? '알아듣는 중…' : '음성 인식 모델 준비 중… (처음 한 번만 오래 걸려요)');
     const res = await api.transcribe(audio, wasCommand ? 'command' : 'wake');
     if (!res.ok) {
       addLog('error', res.error);
@@ -139,6 +179,7 @@
     const text = res.text;
     if (wasCommand) {
       if (!text) {
+        addLog('system', '말씀을 알아듣지 못했어요. 마이크 가까이에서 다시 말씀해 주세요.');
         mode = baseMode();
         idleState();
         return;
@@ -148,7 +189,15 @@
     }
     if (!text) return;
     const rest = await api.stripWakeWord(text);
-    if (rest === null) return; // 호출어가 없는 말은 무시
+    if (rest === null) {
+      // 호출어가 없는 말은 무시하되, 무엇이 들렸는지 잠깐 보여줘서 인식 상태를 알 수 있게 합니다.
+      if (mode === 'wake' && !busy) {
+        $('status-sub').textContent = `들린 말: "${text.slice(0, 40)}" (호출어 없음)`;
+        clearTimeout(heardTimer);
+        heardTimer = setTimeout(() => mode === 'wake' && !busy && idleState(), 3500);
+      }
+      return;
+    }
     if (rest === '') enterCommand();
     else await handleCommand(rest, res.ms);
   }
@@ -354,16 +403,16 @@
       setInd('ind-voice', false, true);
       addLog('error', `음성 인식 모델을 불러오지 못했습니다: ${p.error}`);
     } else if (p.ready) {
+      sttReady = true;
       setInd('ind-voice', true);
       if (!busy) idleState();
     } else if (p.pct !== undefined && !busy) {
+      sttReady = false;
       $('status-sub').textContent = `음성 인식 모델 준비 중… ${p.pct}% (처음 한 번만)`;
     }
   });
 
-  window.Voice.onSegment((audio) => {
-    queue = queue.then(() => handleSegment(audio)).catch((e) => addLog('error', e.message));
-  });
+  window.Voice.onSegment(onSegmentCaptured);
   window.Voice.onSpeechStart(() => {
     if (mode === 'command') clearTimeout(commandTimer);
   });
