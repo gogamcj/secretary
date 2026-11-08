@@ -1,7 +1,7 @@
 {
   "name": "jarvis",
   "productName": "JARVIS",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Windows·Mac용 자비스 스타일 개인비서 (음성, 메일, 캘린더, 카카오톡, PC 제어)",
   "main": "src/main/main.js",
   "author": "jimi",

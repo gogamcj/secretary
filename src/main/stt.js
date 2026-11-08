@@ -63,4 +63,45 @@ function stripWakeWord(text, wakeWords) {
   return null;
 }
 
-module.exports = { init, transcribe, getPipe, cleanup, stripWakeWord };
+// ---------- 클라우드 음성 인식 (OpenAI) ----------
+// 한국어 정확도가 높고, 컴퓨터 성능과 상관없이 1초 안팎으로 빠릅니다.
+function toWav(float32, sampleRate = 16000) {
+  const buf = Buffer.alloc(44 + float32.length * 2);
+  buf.write('RIFF', 0);
+  buf.writeUInt32LE(36 + float32.length * 2, 4);
+  buf.write('WAVE', 8);
+  buf.write('fmt ', 12);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(1, 22); // mono
+  buf.writeUInt32LE(sampleRate, 24);
+  buf.writeUInt32LE(sampleRate * 2, 28);
+  buf.writeUInt16LE(2, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write('data', 36);
+  buf.writeUInt32LE(float32.length * 2, 40);
+  for (let i = 0; i < float32.length; i++) {
+    const v = Math.max(-1, Math.min(1, float32[i]));
+    buf.writeInt16LE(Math.round(v < 0 ? v * 0x8000 : v * 0x7fff), 44 + i * 2);
+  }
+  return buf;
+}
+
+async function transcribeCloud(audio, { apiKey, model = 'gpt-4o-mini-transcribe', prompt = '' }) {
+  if (!apiKey) throw new Error('설정에서 OpenAI API 키를 입력해 주세요.');
+  const form = new FormData();
+  form.append('file', new Blob([toWav(audio)], { type: 'audio/wav' }), 'speech.wav');
+  form.append('model', model);
+  form.append('language', 'ko');
+  if (prompt) form.append('prompt', prompt);
+  const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`클라우드 음성 인식 오류 (${res.status}): ${data.error?.message || 'unknown'}`);
+  return cleanup(String(data.text || ''));
+}
+
+module.exports = { init, transcribe, transcribeCloud, toWav, getPipe, cleanup, stripWakeWord };

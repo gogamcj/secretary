@@ -15,6 +15,18 @@ const documents = require('./tools/documents');
 let win = null;
 let agent = null;
 
+const LOCAL_WAKE_MODEL = 'Xenova/whisper-base';
+const STT_HINT = '자비스, 카카오톡, 톡캘린더, 구글 캘린더, 지메일, 일정, 알림, 메일';
+
+function wakeWords() {
+  return [...new Set([...store.DEFAULT_SETTINGS.wakeWords, ...(store.getSettings().wakeWords || [])])];
+}
+
+function localSttModel() {
+  const s = store.getSettings();
+  return s.sttProvider === 'openai' ? LOCAL_WAKE_MODEL : s.sttModel;
+}
+
 const HOTKEY = process.platform === 'darwin' ? 'Alt+J' : 'Alt+J';
 
 function connections() {
@@ -95,18 +107,31 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle('transcribe', async (_e, buffer) => {
+  ipcMain.handle('transcribe', async (_e, buffer, purpose = 'command') => {
+    const t0 = Date.now();
     try {
       const audio = new Float32Array(buffer);
       const s = store.getSettings();
-      const text = await stt.transcribe(audio, s.sttModel, (pct, file) => send('stt-progress', { pct, file }));
-      return { ok: true, text };
+      const progress = (pct, file) => send('stt-progress', { pct, file });
+      const cloud = s.sttProvider === 'openai';
+      const cloudOpts = { apiKey: store.getSecret('openai_api_key'), model: s.sttCloudModel, prompt: STT_HINT };
+      let text;
+      if (!cloud) {
+        text = await stt.transcribe(audio, s.sttModel, progress);
+      } else if (purpose === 'wake') {
+        // 호출어는 내 컴퓨터의 가벼운 모델로 먼저 확인하고, 호출어가 있을 때만 클라우드로 정확히 다시 받아씁니다.
+        const quick = await stt.transcribe(audio, LOCAL_WAKE_MODEL, progress);
+        text = stt.stripWakeWord(quick, wakeWords()) === null ? quick : await stt.transcribeCloud(audio, cloudOpts);
+      } else {
+        text = await stt.transcribeCloud(audio, cloudOpts);
+      }
+      return { ok: true, text, ms: Date.now() - t0 };
     } catch (e) {
-      return { ok: false, error: `음성 인식 오류: ${e.message}` };
+      return { ok: false, error: `음성 인식 오류: ${e.message}`, ms: Date.now() - t0 };
     }
   });
 
-  ipcMain.handle('wake:strip', (_e, text) => stt.stripWakeWord(String(text || ''), store.getSettings().wakeWords));
+  ipcMain.handle('wake:strip', (_e, text) => stt.stripWakeWord(String(text || ''), wakeWords()));
 
   ipcMain.handle('conversation:reset', () => {
     agent.reset();
@@ -119,6 +144,7 @@ function registerIpc() {
       anthropic: !!store.getSecret('anthropic_api_key'),
       googleSecret: !!store.getSecret('google_client_secret'),
       kakaoSecret: !!store.getSecret('kakao_client_secret'),
+      openai: !!store.getSecret('openai_api_key'),
     },
     connections: connections(),
     platform: process.platform,
@@ -132,6 +158,12 @@ function registerIpc() {
     if (typeof secrets.anthropic === 'string' && secrets.anthropic) store.setSecret('anthropic_api_key', secrets.anthropic.trim());
     if (typeof secrets.googleSecret === 'string' && secrets.googleSecret) store.setSecret('google_client_secret', secrets.googleSecret.trim());
     if (typeof secrets.kakaoSecret === 'string' && secrets.kakaoSecret) store.setSecret('kakao_client_secret', secrets.kakaoSecret.trim());
+    if (typeof secrets.openai === 'string' && secrets.openai) store.setSecret('openai_api_key', secrets.openai.trim());
+    // 바뀐 음성 모델을 미리 불러 둡니다
+    stt.getPipe(localSttModel(), (pct, file) => send('stt-progress', { pct, file })).then(
+      () => send('stt-progress', { pct: 100, ready: true }),
+      (e) => send('stt-progress', { error: e.message }),
+    );
     return true;
   });
 
@@ -189,7 +221,7 @@ app.whenReady().then(async () => {
   });
 
   // 음성 모델을 미리 불러와 첫 명령을 빠르게 합니다.
-  stt.getPipe(store.getSettings().sttModel, (pct, file) => send('stt-progress', { pct, file })).then(
+  stt.getPipe(localSttModel(), (pct, file) => send('stt-progress', { pct, file })).then(
     () => send('stt-progress', { pct: 100, ready: true }),
     (e) => send('stt-progress', { error: e.message }),
   );

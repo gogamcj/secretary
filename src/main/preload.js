@@ -8,7 +8,7 @@ const on = (channel) => (cb) => {
 
 contextBridge.exposeInMainWorld('jarvis', {
   ask: (text) => ipcRenderer.invoke('ask', text),
-  transcribe: (float32) => ipcRenderer.invoke('transcribe', float32.buffer),
+  transcribe: (float32, purpose) => ipcRenderer.invoke('transcribe', float32.buffer, purpose),
   stripWakeWord: (text) => ipcRenderer.invoke('wake:strip', text),
   resetConversation: () => ipcRenderer.invoke('conversation:reset'),
   getSettings: () => ipcRenderer.invoke('settings:get'),

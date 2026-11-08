@@ -88,8 +88,11 @@ const DEFAULT_SETTINGS = {
   model: 'claude-opus-5-5',
   effort: 'low',
   wakeWordEnabled: true,
-  wakeWords: ['자비스', '쟈비스', 'jarvis'],
+  wakeWords: ['자비스', '쟈비스', '재비스', '자비쓰', '저비스', '짜비스', 'jarvis', 'javis'],
   sttModel: 'Xenova/whisper-small',
+  sttProvider: 'local', // local | openai
+  sttCloudModel: 'gpt-4o-mini-transcribe',
+  fastMode: false,
   ttsEnabled: true,
   ttsRate: 1.05,
   documentsDir: '',

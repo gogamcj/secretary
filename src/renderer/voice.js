@@ -4,7 +4,7 @@
   const FRAME = 1024; // 64ms
   const FRAME_MS = (FRAME / SAMPLE_RATE) * 1000;
   const PRE_ROLL_FRAMES = 5; // 말 시작 전 320ms 포함
-  const END_SILENCE_MS = 850;
+  const END_SILENCE_MS = 650;
   const MIN_SPEECH_MS = 350;
   const MAX_SEGMENT_MS = 15000;
 
@@ -132,31 +132,59 @@
       .trim();
   }
 
-  function speak(text, rate = 1.05) {
-    return new Promise((resolve) => {
-      if (!('speechSynthesis' in window)) return resolve();
-      speechSynthesis.cancel();
-      const clean = cleanForSpeech(text);
-      if (!clean) return resolve();
-      // 긴 글은 문장 단위로 나눠 읽어야 끊기지 않습니다
-      const parts = clean.match(/[^.!?。\n]+[.!?。]?/g) || [clean];
-      let i = 0;
-      const next = () => {
-        if (i >= parts.length) return resolve();
-        const u = new SpeechSynthesisUtterance(parts[i++].trim());
-        u.lang = 'ko-KR';
-        if (voice) u.voice = voice;
-        u.rate = rate;
-        u.onend = next;
-        u.onerror = next;
-        speechSynthesis.speak(u);
-      };
-      next();
-    });
+  // 문장 단위 음성 대기열: 답변이 스트리밍으로 오는 동안 완성된 문장부터 바로 읽습니다.
+  const queue = [];
+  let speakingNow = false;
+  let idleWaiters = [];
+  let rate = 1.05;
+
+  function pump() {
+    if (speakingNow) return;
+    const next = queue.shift();
+    if (next === undefined) {
+      idleWaiters.forEach((r) => r());
+      idleWaiters = [];
+      return;
+    }
+    speakingNow = true;
+    const u = new SpeechSynthesisUtterance(next);
+    u.lang = 'ko-KR';
+    if (voice) u.voice = voice;
+    u.rate = rate;
+    const done = () => {
+      speakingNow = false;
+      pump();
+    };
+    u.onend = done;
+    u.onerror = done;
+    speechSynthesis.speak(u);
+  }
+
+  function enqueue(text, r) {
+    if (!('speechSynthesis' in window)) return;
+    if (r) rate = r;
+    const clean = cleanForSpeech(text);
+    if (!clean) return;
+    for (const part of clean.match(/[^.!?。\n]+[.!?。]?/g) || [clean]) if (part.trim()) queue.push(part.trim());
+    pump();
+  }
+
+  function whenIdle() {
+    if (!speakingNow && queue.length === 0) return Promise.resolve();
+    return new Promise((r) => idleWaiters.push(r));
+  }
+
+  function speak(text, r) {
+    enqueue(text, r);
+    return whenIdle();
   }
 
   function stopSpeaking() {
+    queue.length = 0;
+    speakingNow = false;
     if ('speechSynthesis' in window) speechSynthesis.cancel();
+    idleWaiters.forEach((r) => r());
+    idleWaiters = [];
   }
 
   function chime(up = true) {
@@ -178,6 +206,8 @@
   window.Voice = {
     start,
     speak,
+    enqueue,
+    whenIdle,
     stopSpeaking,
     chime,
     visualize: true,

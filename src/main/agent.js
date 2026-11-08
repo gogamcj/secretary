@@ -69,6 +69,49 @@ class Agent {
     ].join('\n');
   }
 
+  requestParams(settings, fast) {
+    const model = settings.model || 'claude-opus-5-5';
+    const betas = [];
+    const params = {
+      model,
+      max_tokens: 16000,
+      thinking: { type: 'adaptive' },
+      output_config: { effort: settings.effort || 'low' },
+      system: this.system,
+      tools: this.toolDefs(),
+      messages: this.messages,
+    };
+    // 거절 시 자동 대체 모델 (지원하는 모델에서만)
+    if (/^claude-(opus-5|fable-5|sonnet-5-5)/.test(model)) {
+      betas.push('server-side-fallback-2026-07-01');
+      params.fallbacks = 'default';
+    }
+    // 빠른 모드: Opus 5 계열만, 요금 2배
+    if (fast && /^claude-opus-5/.test(model)) {
+      betas.push('fast-mode-2026-02-01');
+      params.speed = 'fast';
+    }
+    if (betas.length) params.betas = betas;
+    return params;
+  }
+
+  // 답변을 스트리밍으로 받아, 글자가 오는 대로 화면·음성에 넘깁니다.
+  async callClaude(client, settings) {
+    const run = async (fast) => {
+      const stream = client.beta.messages.stream(this.requestParams(settings, fast));
+      stream.on('text', (delta) => this.onStatus({ state: 'delta', text: delta }));
+      return stream.finalMessage();
+    };
+    if (!settings.fastMode) return run(false);
+    try {
+      return await run(true);
+    } catch (e) {
+      // 빠른 모드 한도 초과나 미지원이면 일반 속도로 다시 시도
+      if (e instanceof AnthropicSDK.RateLimitError || e instanceof AnthropicSDK.BadRequestError) return run(false);
+      throw e;
+    }
+  }
+
   toolDefs() {
     return this.tools.map(({ name, description, input_schema }) => ({ name, description, input_schema }));
   }
@@ -128,17 +171,7 @@ class Agent {
     try {
       for (let turn = 0; turn < MAX_TURNS_PER_REQUEST; turn++) {
         this.onStatus({ state: 'thinking' });
-        const response = await client.beta.messages.create({
-          model: settings.model || 'claude-opus-5-5',
-          max_tokens: 16000,
-          betas: ['server-side-fallback-2026-07-01'],
-          fallbacks: 'default',
-          thinking: { type: 'adaptive' },
-          output_config: { effort: settings.effort || 'low' },
-          system: this.system,
-          tools: this.toolDefs(),
-          messages: this.messages,
-        });
+        const response = await this.callClaude(client, settings);
 
         // 응답 블록은 그대로(생각 블록 포함) 대화에 붙입니다.
         this.messages.push({ role: 'assistant', content: response.content });
@@ -159,6 +192,7 @@ class Agent {
 
         const uses = response.content.filter((b) => b.type === 'tool_use');
         if (text) this.onStatus({ state: 'progress', text });
+        this.onStatus({ state: 'segment-end' });
         const results = [];
         for (const use of uses) {
           const r = await this.runTool(use);

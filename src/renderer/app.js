@@ -129,7 +129,7 @@
       clearTimeout(commandTimer);
       setState('thinking', 'PROCESSING', '음성을 알아듣는 중…');
     }
-    const res = await api.transcribe(audio);
+    const res = await api.transcribe(audio, wasCommand ? 'command' : 'wake');
     if (!res.ok) {
       addLog('error', res.error);
       mode = baseMode();
@@ -143,33 +143,80 @@
         idleState();
         return;
       }
-      await handleCommand(text);
+      await handleCommand(text, res.ms);
       return;
     }
     if (!text) return;
     const rest = await api.stripWakeWord(text);
     if (rest === null) return; // 호출어가 없는 말은 무시
     if (rest === '') enterCommand();
-    else await handleCommand(rest);
+    else await handleCommand(rest, res.ms);
   }
 
-  async function handleCommand(text) {
+  // 스트리밍 답변을 문장 단위로 바로 읽어 주기 위한 상태
+  const live = { active: false, buf: '', spoke: false, firstAt: 0, shown: '' };
+
+  function speakSentence(text) {
+    if (!settings.ttsEnabled || !text.trim()) return;
+    if (!live.spoke) {
+      setState('speaking', 'RESPONDING', '');
+      window.Voice.visualize = false;
+      window.HUD.fakeSpeech(true);
+    }
+    live.spoke = true;
+    window.Voice.enqueue(text, Number(settings.ttsRate) || 1.05);
+  }
+
+  function onDelta(delta) {
+    if (!live.active) return;
+    if (!live.firstAt) live.firstAt = performance.now();
+    live.buf += delta;
+    live.shown = (live.shown + delta).slice(-140);
+    $('status-sub').textContent = live.shown;
+    // 완성된 문장부터 읽기
+    let m;
+    while ((m = live.buf.match(/^([\s\S]*?[.!?。\n])(\s+|$)/)) && m[1].trim().length > 1) {
+      speakSentence(m[1]);
+      live.buf = live.buf.slice(m[0].length);
+    }
+  }
+
+  function flushLive() {
+    if (live.buf.trim()) speakSentence(live.buf);
+    live.buf = '';
+  }
+
+  async function handleCommand(text, sttMs) {
     clearTimeout(commandTimer);
     busy = true;
     window.Voice.setPaused(true);
+    window.Voice.stopSpeaking();
     addLog('user', text);
     setState('thinking', 'PROCESSING', '생각하는 중…');
+    Object.assign(live, { active: true, buf: '', spoke: false, firstAt: 0, shown: '' });
+    const t0 = performance.now();
     try {
       const res = await api.ask(text);
+      flushLive();
+      live.active = false;
+      const sec = (ms) => `${(ms / 1000).toFixed(1)}초`;
+      const timing = [sttMs ? `음성 인식 ${sec(sttMs)}` : null, live.firstAt ? `첫 답 ${sec(live.firstAt - t0)}` : null, `전체 ${sec(performance.now() - t0)}`]
+        .filter(Boolean)
+        .join(' · ');
       if (res.ok) {
         addLog('jarvis', res.reply);
-        await say(res.reply);
+        addLog('timing', timing);
+        if (!live.spoke) await say(res.reply);
       } else {
         addLog('error', res.error);
         setState('error', 'ERROR', res.error);
-        await say(res.error);
+        if (!live.spoke) await say(res.error);
       }
+      if (live.spoke) await window.Voice.whenIdle();
     } finally {
+      live.active = false;
+      window.HUD.fakeSpeech(false);
+      window.Voice.visualize = true;
       busy = false;
       mode = baseMode();
       window.Voice.setPaused(false);
@@ -193,9 +240,9 @@
 
   // ---------- 설정 ----------
   const form = $('settings-form');
-  const FIELDS = ['userName', 'assistantName', 'model', 'effort', 'sttModel', 'ttsRate', 'googleClientId', 'kakaoRestKey', 'documentsDir'];
-  const CHECKS = ['wakeWordEnabled', 'ttsEnabled', 'confirmRiskyActions'];
-  const SECRETS = ['anthropic', 'googleSecret', 'kakaoSecret'];
+  const FIELDS = ['userName', 'assistantName', 'model', 'effort', 'sttProvider', 'sttModel', 'sttCloudModel', 'ttsRate', 'googleClientId', 'kakaoRestKey', 'documentsDir'];
+  const CHECKS = ['wakeWordEnabled', 'ttsEnabled', 'confirmRiskyActions', 'fastMode'];
+  const SECRETS = ['anthropic', 'googleSecret', 'kakaoSecret', 'openai'];
 
   async function loadSettings() {
     const data = await api.getSettings();
@@ -294,7 +341,8 @@
       setState('thinking', 'EXECUTING', `${label}…`);
       addLog('tool', `▸ ${label}`);
     } else if (s.state === 'confirm') setState('thinking', 'AWAITING', '확인 창에서 승인해 주세요');
-    else if (s.state === 'progress' && s.text) $('status-sub').textContent = s.text;
+    else if (s.state === 'delta') onDelta(s.text);
+    else if (s.state === 'segment-end') flushLive();
   });
   api.onReminder(async (r) => {
     addLog('jarvis', `알림: ${r.text}`);

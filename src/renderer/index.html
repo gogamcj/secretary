@@ -87,7 +87,14 @@
           <legend>Claude (두뇌)</legend>
           <label>Claude API 키 <span class="badge" data-secret="anthropic"></span>
             <input name="anthropic" type="password" placeholder="sk-ant-... (바꿀 때만 입력)" /></label>
-          <label>모델<input name="model" placeholder="claude-opus-5-5" /></label>
+          <label>모델
+            <select name="model">
+              <option value="claude-opus-5-5">Opus 5.5 (가장 똑똑함, 기본)</option>
+              <option value="claude-sonnet-5-5">Sonnet 5.5 (빠름, 요금 절반)</option>
+              <option value="claude-haiku-5-5">Haiku 5.5 (가장 빠름, 가장 저렴)</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" name="fastMode" /> 빠른 모드 (Opus만, 답변 생성 최대 2.5배 빠름, 요금 2배)</label>
           <label>생각 깊이
             <select name="effort">
               <option value="low">빠르게 (low, 추천)</option>
@@ -102,13 +109,23 @@
           <legend>음성</legend>
           <label class="check"><input type="checkbox" name="wakeWordEnabled" /> "자비스" 호출어로 항상 듣기</label>
           <label class="check"><input type="checkbox" name="ttsEnabled" /> 음성으로 답하기</label>
-          <label>음성 인식 모델
+          <label>음성 인식 방식
+            <select name="sttProvider">
+              <option value="local">내 컴퓨터 (무료, 오프라인, 컴퓨터 성능에 따라 느릴 수 있음)</option>
+              <option value="openai">클라우드 OpenAI (정확하고 빠름, 유료·아주 저렴)</option>
+            </select>
+          </label>
+          <label>OpenAI API 키 (클라우드 방식일 때) <span class="badge" data-secret="openai"></span>
+            <input name="openai" type="password" placeholder="sk-... (바꿀 때만 입력)" /></label>
+          <label>클라우드 인식 모델<input name="sttCloudModel" placeholder="gpt-4o-mini-transcribe" /></label>
+          <label>내 컴퓨터 인식 모델
             <select name="sttModel">
               <option value="Xenova/whisper-base">빠름 (whisper-base)</option>
               <option value="Xenova/whisper-small">균형 (whisper-small, 추천)</option>
               <option value="onnx-community/whisper-large-v3-turbo">정확 (large-v3-turbo, 고사양)</option>
             </select>
           </label>
+          <p class="help">OpenAI 키는 <a href="#" data-href="https://platform.openai.com/api-keys">OpenAI 콘솔</a>에서 만들 수 있습니다. 클라우드 방식에서도 "자비스" 호출어 감지는 내 컴퓨터에서 하고, 호출어가 들린 말만 클라우드로 보냅니다.</p>
           <label>말하기 속도<input name="ttsRate" type="number" min="0.6" max="1.6" step="0.05" /></label>
         </fieldset>
 
