@@ -82,6 +82,8 @@ function setSecretJSON(key, obj) {
 }
 
 // ---- 설정 ----
+const SETTINGS_VERSION = 4;
+
 const DEFAULT_SETTINGS = {
   userName: '',
   assistantName: '자비스',
@@ -91,8 +93,11 @@ const DEFAULT_SETTINGS = {
   wakeWords: ['자비스', '쟈비스', '재비스', '자비쓰', '저비스', '짜비스', 'jarvis', 'javis'],
   sttModel: 'Xenova/whisper-small',
   sttProvider: 'local', // local | openai
-  sttCloudModel: 'gpt-4o-mini-transcribe',
+  sttCloudModel: 'gpt-4o-transcribe',
+  sttHints: '',
   fastMode: false,
+  webSearchEnabled: true,
+  computerUseEnabled: false,
   ttsEnabled: true,
   ttsProvider: 'system', // system | openai | elevenlabs
   ttsVoice: 'onyx',
@@ -105,10 +110,14 @@ const DEFAULT_SETTINGS = {
   confirmRiskyActions: true,
   googleClientId: '',
   kakaoRestKey: '',
+  settingsVersion: SETTINGS_VERSION,
 };
 
 function getSettings() {
-  return { ...DEFAULT_SETTINGS, ...read('settings', {}) };
+  const saved = read('settings', {});
+  // v0.4.0: 더 정확한 클라우드 음성 인식 모델로 한 번 올려 줍니다 (설정에서 다시 바꿀 수 있음).
+  if ((saved.settingsVersion || 0) < 4 && saved.sttCloudModel === 'gpt-4o-mini-transcribe') saved.sttCloudModel = 'gpt-4o-transcribe';
+  return { ...DEFAULT_SETTINGS, ...saved, settingsVersion: SETTINGS_VERSION };
 }
 
 function saveSettings(patch) {

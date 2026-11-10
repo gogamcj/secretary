@@ -1,11 +1,12 @@
 // Electron 메인 프로세스: 창, 설정, 도구, 음성 인식, 알림을 연결합니다.
 const path = require('path');
-const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Notification, globalShortcut, session, systemPreferences, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Notification, globalShortcut, session, systemPreferences, safeStorage, desktopCapturer, screen } = require('electron');
 
 const store = require('./store');
 const stt = require('./stt');
 const tts = require('./tts');
 const { Agent } = require('./agent');
+const { Computer } = require('./computer');
 const memory = require('./tools/memory');
 const reminders = require('./tools/reminders');
 const google = require('./tools/google');
@@ -17,7 +18,15 @@ let win = null;
 let agent = null;
 
 const LOCAL_WAKE_MODEL = 'Xenova/whisper-base';
-const STT_HINT = '자비스, 카카오톡, 톡캘린더, 구글 캘린더, 지메일, 일정, 알림, 메일';
+const STT_HINT = '자비스, 카카오톡, 톡캘린더, 구글 캘린더, 지메일, 일정, 알림, 메일, 검색, 브라우저, 유튜브, 네이버';
+
+// 음성 인식 힌트: 기본 단어 + 이름 + 설정의 "자주 쓰는 단어"
+function sttPrompt() {
+  const s = store.getSettings();
+  const extra = [s.assistantName, s.userName, s.sttHints].filter(Boolean).join(', ');
+  return extra ? `${STT_HINT}, ${extra}` : STT_HINT;
+}
+const STOP_HOTKEY = 'Alt+Shift+X';
 
 function wakeWords() {
   return [...new Set([...store.DEFAULT_SETTINGS.wakeWords, ...(store.getSettings().wakeWords || [])])];
@@ -117,7 +126,7 @@ function registerIpc() {
       const s = store.getSettings();
       const progress = (pct, file) => send('stt-progress', { pct, file });
       const cloud = s.sttProvider === 'openai';
-      const cloudOpts = { apiKey: store.getSecret('openai_api_key'), model: s.sttCloudModel, prompt: STT_HINT };
+      const cloudOpts = { apiKey: store.getSecret('openai_api_key'), model: s.sttCloudModel, prompt: sttPrompt() };
       let text;
       if (!cloud) {
         text = await stt.transcribe(audio, s.sttModel, progress);
@@ -144,6 +153,8 @@ function registerIpc() {
   });
 
   ipcMain.handle('wake:strip', (_e, text) => stt.stripWakeWord(String(text || ''), wakeWords()));
+
+  ipcMain.handle('agent:stop', () => (agent.stop(), true));
 
   ipcMain.handle('conversation:reset', () => {
     agent.reset();
@@ -219,7 +230,35 @@ app.whenReady().then(async () => {
     } catch {}
   }
 
-  agent = new Agent({ tools: buildTools(), confirm, onStatus: (s) => send('status', s) });
+  const computer = new Computer({ desktopCapturer, screen, clipboard });
+  agent = new Agent({
+    tools: buildTools(),
+    confirm,
+    onStatus: (s) => send('status', s),
+    computer,
+    hooks: {
+      // 화면을 조작하는 동안 자비스 창을 내려서, 다른 앱을 가리지 않게 합니다.
+      async computerStart() {
+        if (process.platform === 'darwin') {
+          // 손쉬운 사용 권한이 없으면 클릭·입력이 무시되므로 먼저 요청합니다.
+          try {
+            if (!systemPreferences.isTrustedAccessibilityClient(false)) systemPreferences.isTrustedAccessibilityClient(true);
+          } catch {}
+        }
+        globalShortcut.register(STOP_HOTKEY, () => agent.stop());
+        if (win && !win.isDestroyed()) win.minimize();
+        await new Promise((r) => setTimeout(r, 400));
+      },
+      async computerEnd() {
+        globalShortcut.unregister(STOP_HOTKEY);
+        if (win && !win.isDestroyed()) {
+          win.restore();
+          win.showInactive();
+        }
+      },
+    },
+  });
+  app.on('will-quit', () => computer.stop());
   registerIpc();
   createWindow();
 

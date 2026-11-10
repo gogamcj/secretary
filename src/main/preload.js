@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   transcribe: (float32, purpose) => ipcRenderer.invoke('transcribe', float32.buffer, purpose),
   tts: (text) => ipcRenderer.invoke('tts', text),
   stripWakeWord: (text) => ipcRenderer.invoke('wake:strip', text),
+  stopAgent: () => ipcRenderer.invoke('agent:stop'),
   resetConversation: () => ipcRenderer.invoke('conversation:reset'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (data) => ipcRenderer.invoke('settings:save', data),

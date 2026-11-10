@@ -52,15 +52,59 @@ function stripWakeWord(text, wakeWords) {
   const lower = text.toLowerCase();
   for (const w of wakeWords) {
     const idx = lower.indexOf(w.toLowerCase());
-    if (idx !== -1 && idx < 12) {
-      return text
-        .slice(idx + w.length)
-        .replace(/^(야|아)(?=$|[\s,.!?~])/, '')
-        .replace(/^[\s,.!?~]+/, '')
-        .trim();
-    }
+    if (idx !== -1 && idx < 12) return afterWake(text.slice(idx + w.length));
+  }
+  // 정확히 "자비스"가 아니어도 비슷하게 들린 말(차비스, 자비쓰, 잡이스, 자빗으 등)을 호출어로 봅니다.
+  if (wakeWords.some((w) => /자비스|jarvis/i.test(w))) {
+    const end = fuzzyJarvisEnd(text);
+    if (end !== -1) return afterWake(text.slice(end));
   }
   return null;
+}
+
+function afterWake(rest) {
+  return rest
+    .replace(/^(야|아)(?=$|[\s,.!?~])/, '')
+    .replace(/^[\s,.!?~]+/, '')
+    .trim();
+}
+
+// 한글 음절 → [초성, 중성, 종성] 번호
+function jamo(ch) {
+  const c = ch.charCodeAt(0) - 0xac00;
+  if (c < 0 || c > 11171) return null;
+  return [Math.floor(c / 588), Math.floor((c % 588) / 28), c % 28];
+}
+// 초성: ㅈ12 ㅉ13 ㅊ14 / ㅂ7 ㅃ8 ㅍ17 / ㅅ9 ㅆ10 ㅇ11
+// 중성: ㅏ0 ㅐ1 ㅑ2 ㅓ4 ㅔ5 ㅕ6 ㅖ7 / ㅣ20 ㅟ16 ㅢ19 ㅔ5 ㅖ7 / ㅡ18 ㅜ13 ㅠ17 ㅣ20
+// 종성: 없음0 ㅅ19 ㅆ20 ㅂ17
+const J1 = (j) => [12, 13, 14].includes(j[0]) && [0, 1, 2, 4, 5].includes(j[1]) && [0, 17].includes(j[2]);
+const J2 = (j) => [7, 8, 17, 11].includes(j[0]) && [20, 16, 19, 5, 7].includes(j[1]);
+const J3 = (j) => [9, 10, 11].includes(j[0]) && [18, 13, 17, 20].includes(j[1]) && [0, 19, 20].includes(j[2]);
+
+/** 앞부분(6음절 안)에서 "자비스"와 비슷한 소리를 찾아, 그 끝 위치를 돌려줍니다. 없으면 -1. */
+function fuzzyJarvisEnd(text) {
+  const chars = [];
+  for (let i = 0; i < text.length && chars.length < 8; i++) {
+    if (/\s|[,.!?~]/.test(text[i])) continue;
+    chars.push({ ch: text[i], i, j: jamo(text[i]) });
+  }
+  for (let k = 0; k + 1 < chars.length && k < 6; k++) {
+    const a = chars[k].j;
+    const b = chars[k + 1].j;
+    if (!a || !b || !J1(a) || !J2(b)) continue;
+    // 자+빗 (종성 ㅅ/ㅆ)으로 끝나는 경우: "자빗", "자빗으"
+    if ([19, 20].includes(b[2])) {
+      const c = chars[k + 2]?.j;
+      return c && c[0] === 11 && c[1] === 18 ? chars[k + 2].i + 1 : chars[k + 1].i + 1;
+    }
+    const c = chars[k + 2]?.j;
+    if (c && b[2] === 0 && J3(c) && !(a[0] === 14 && b[0] === 11)) {
+      // 오탐을 줄이기 위해, 첫 소리가 ㅈ/ㅉ이거나 둘째 소리가 ㅂ/ㅃ/ㅍ일 때만 인정 ("차이스" 같은 말은 제외)
+      return chars[k + 2].i + 1;
+    }
+  }
+  return -1;
 }
 
 // ---------- 클라우드 음성 인식 (OpenAI) ----------
@@ -87,7 +131,7 @@ function toWav(float32, sampleRate = 16000) {
   return buf;
 }
 
-async function transcribeCloud(audio, { apiKey, model = 'gpt-4o-mini-transcribe', prompt = '' }) {
+async function transcribeCloud(audio, { apiKey, model = 'gpt-4o-transcribe', prompt = '' }) {
   if (!apiKey) throw new Error('설정에서 OpenAI API 키를 입력해 주세요.');
   const form = new FormData();
   form.append('file', new Blob([toWav(audio)], { type: 'audio/wav' }), 'speech.wav');
@@ -104,4 +148,4 @@ async function transcribeCloud(audio, { apiKey, model = 'gpt-4o-mini-transcribe'
   return cleanup(String(data.text || ''));
 }
 
-module.exports = { init, transcribe, transcribeCloud, toWav, getPipe, cleanup, stripWakeWord };
+module.exports = { init, transcribe, transcribeCloud, toWav, getPipe, cleanup, stripWakeWord, fuzzyJarvisEnd };

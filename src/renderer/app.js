@@ -32,7 +32,29 @@
     run_command: '명령 실행',
     clipboard: '클립보드',
     system_info: '시스템 확인',
+    web_search: '웹 검색',
+    web_fetch: '웹페이지 읽는 중',
   };
+  const COMPUTER_LABEL = {
+    screenshot: '화면 보는 중',
+    zoom: '화면 확대',
+    left_click: '클릭',
+    right_click: '오른쪽 클릭',
+    middle_click: '가운데 클릭',
+    double_click: '더블클릭',
+    triple_click: '세 번 클릭',
+    left_click_drag: '끌어서 놓기',
+    mouse_move: '마우스 이동',
+    scroll: '스크롤',
+    type: '글자 입력',
+    key: '키 누르기',
+    hold_key: '키 누르고 있기',
+    wait: '기다리는 중',
+  };
+  function toolLabel(name) {
+    if (String(name).startsWith('computer:')) return `화면 조작 · ${COMPUTER_LABEL[name.slice(9)] || name.slice(9)}`;
+    return TOOL_LABEL[name] || name;
+  }
 
   let settings = {};
   let mode = 'off'; // off | wake | command
@@ -289,8 +311,8 @@
 
   // ---------- 설정 ----------
   const form = $('settings-form');
-  const FIELDS = ['userName', 'assistantName', 'model', 'effort', 'sttProvider', 'sttModel', 'sttCloudModel', 'ttsRate', 'ttsProvider', 'ttsVoice', 'ttsCloudModel', 'ttsInstructions', 'elevenVoiceId', 'googleClientId', 'kakaoRestKey', 'documentsDir'];
-  const CHECKS = ['wakeWordEnabled', 'ttsEnabled', 'confirmRiskyActions', 'fastMode'];
+  const FIELDS = ['userName', 'assistantName', 'model', 'effort', 'sttProvider', 'sttModel', 'sttCloudModel', 'ttsRate', 'sttHints', 'ttsProvider', 'ttsVoice', 'ttsCloudModel', 'ttsInstructions', 'elevenVoiceId', 'googleClientId', 'kakaoRestKey', 'documentsDir'];
+  const CHECKS = ['wakeWordEnabled', 'ttsEnabled', 'confirmRiskyActions', 'fastMode', 'webSearchEnabled', 'computerUseEnabled'];
   const SECRETS = ['anthropic', 'googleSecret', 'kakaoSecret', 'openai', 'elevenlabs'];
 
   async function loadSettings() {
@@ -309,6 +331,10 @@
     $('conn-kakao').textContent = data.connections.kakao ? '● 연결됨' : '○ 미연결';
     $('conn-kakao').className = `conn ${data.connections.kakao ? 'on' : 'off'}`;
     $('kakao-redirect').textContent = await api.kakaoRedirectUri();
+    if (data.platform === 'darwin') {
+      $('computer-help').textContent =
+        '자비스가 화면을 찍어 보고, 사람처럼 클릭하고 입력합니다. 처음 한 번 시스템 설정 > 개인정보 보호 및 보안에서 "화면 기록"과 "손쉬운 사용"에 JARVIS를 허용해 주세요. 시작할 때 한 번 확인을 묻고, 결제·비밀번호·삭제·전송 같은 일은 하기 전에 물어봅니다. 도중에 멈추려면 Option+Shift+X 를 누르세요. 화면 사진이 Claude로 전송되고, 작업 한 번에 수십~수백 원 정도 듭니다.';
+    }
     $('kakao-desktop-help').textContent =
       data.platform === 'darwin'
         ? '친구·단톡방에 카톡을 보내려면 Mac에 kmsg를 설치하세요: 터미널에서 brew install channprj/tap/kmsg (손쉬운 사용 권한 필요)'
@@ -381,14 +407,17 @@
     if (q && !busy) handleCommand(q);
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') window.Voice.stopSpeaking();
+    if (e.key === 'Escape') {
+      window.Voice.stopSpeaking();
+      api.stopAgent();
+    }
   });
 
   api.onHotkey(() => (busy ? window.Voice.stopSpeaking() : enterCommand()));
   api.onStatus((s) => {
     if (s.state === 'thinking') setState('thinking', 'PROCESSING', '생각하는 중…');
     else if (s.state === 'tool') {
-      const label = TOOL_LABEL[s.tool] || s.tool;
+      const label = toolLabel(s.tool);
       setState('thinking', 'EXECUTING', `${label}…`);
       addLog('tool', `▸ ${label}`);
     } else if (s.state === 'confirm') setState('thinking', 'AWAITING', '확인 창에서 승인해 주세요');
