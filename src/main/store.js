@@ -111,6 +111,8 @@ const DEFAULT_SETTINGS = {
   googleClientId: '',
   kakaoRestKey: '',
   settingsVersion: SETTINGS_VERSION,
+  mobileEnabled: false,
+  mobilePort: 5790,
 };
 
 function getSettings() {

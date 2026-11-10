@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   kakaoRedirectUri: () => ipcRenderer.invoke('kakao:redirect-uri'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   listReminders: () => ipcRenderer.invoke('reminders:list'),
+  mobileInfo: () => ipcRenderer.invoke('mobile:info'),
+  mobileNewToken: () => ipcRenderer.invoke('mobile:new-token'),
   onStatus: on('status'),
   onReminder: on('reminder'),
   onHotkey: on('hotkey'),

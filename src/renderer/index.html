@@ -195,6 +195,17 @@
         </fieldset>
 
         <fieldset>
+          <legend>아이폰 연결 <span class="conn" id="conn-mobile"></span></legend>
+          <label class="check"><input type="checkbox" name="mobileEnabled" /> 아이폰(휴대폰)에서 이 자비스를 쓸 수 있게 하기</label>
+          <label>포트<input name="mobilePort" inputmode="numeric" placeholder="5790" /></label>
+          <div id="mobile-box" class="mobile-box"></div>
+          <p class="help">아이폰 카메라로 QR 코드를 찍어 사파리에서 열고, 공유 버튼 → <b>홈 화면에 추가</b>를 누르면 앱처럼 쓸 수 있습니다. 같은 와이파이에서 바로 되고, 밖에서 쓰려면 PC와 아이폰에 <a href="#" data-href="https://tailscale.com/download">Tailscale</a>을 설치해 같은 계정으로 로그인한 뒤 <b>Tailscale</b> 주소의 QR을 쓰세요. 아이폰에서 🎙 버튼으로 바로 말하려면 HTTPS 주소가 필요합니다(README의 "아이폰에서 쓰기" 참고). 그 전에는 아이폰 키보드의 마이크 버튼으로 말해도 됩니다.</p>
+          <div class="row">
+            <button type="button" class="btn ghost" id="btn-mobile-token">연결 코드 새로 만들기</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
           <legend>안전</legend>
           <label class="check"><input type="checkbox" name="confirmRiskyActions" /> 메일·카톡 보내기, 명령 실행, 일정 삭제 전에 확인 창 띄우기</label>
           <label>문서 저장 폴더<input name="documentsDir" placeholder="비우면 문서/Jarvis" /></label>
