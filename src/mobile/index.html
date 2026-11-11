@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="자비스" />
+  <meta name="theme-color" content="#02060c" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" href="/icon.svg" />
+  <link rel="apple-touch-icon" href="/icon-180.png" />
+  <link rel="stylesheet" href="/style.css" />
+  <title>자비스</title>
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="dot" id="dot"></span><span id="name">J.A.R.V.I.S.</span></div>
+    <div class="head-actions">
+      <button class="icon" id="btn-voice" title="음성으로 답 듣기" aria-label="음성으로 답 듣기">🔊</button>
+      <button class="icon" id="btn-reset" title="새 대화" aria-label="새 대화">↺</button>
+    </div>
+  </header>
+
+  <main id="log" aria-live="polite"></main>
+
+  <section class="pair" id="pair" hidden>
+    <h2>PC 자비스와 연결하기</h2>
+    <p>PC 자비스의 <b>설정 → 아이폰 연결</b>에서 QR 코드를 아이폰 카메라로 찍으면 바로 연결됩니다.</p>
+    <p>또는 PC에 보이는 연결 코드를 붙여 넣으세요.</p>
+    <form id="pair-form">
+      <input id="pair-code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="연결 코드" />
+      <button class="btn primary">연결</button>
+    </form>
+  </section>
+
+  <dialog id="confirm">
+    <form method="dialog">
+      <h3>이 작업을 실행할까요?</h3>
+      <p id="confirm-text"></p>
+      <div class="row">
+        <button class="btn" value="no">취소</button>
+        <button class="btn primary" value="yes">실행</button>
+      </div>
+    </form>
+  </dialog>
+
+  <footer>
+    <form id="ask-form">
+      <button type="button" class="mic" id="btn-mic" aria-label="말하기" hidden>🎙</button>
+      <textarea id="input" rows="1" placeholder="자비스에게 말하기…" enterkeyhint="send"></textarea>
+      <button class="send" id="btn-send" aria-label="보내기">➤</button>
+    </form>
+    <p class="hint" id="hint"></p>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

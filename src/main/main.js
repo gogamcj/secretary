@@ -13,9 +13,13 @@ const google = require('./tools/google');
 const kakao = require('./tools/kakao');
 const pc = require('./tools/pc');
 const documents = require('./tools/documents');
+const mobile = require('./mobile');
 
 let win = null;
 let agent = null;
+let mobileServer = null;
+let mobileAsking = false; // 지금 처리 중인 명령이 아이폰에서 왔는지
+let mobileError = '';
 
 const LOCAL_WAKE_MODEL = 'Xenova/whisper-base';
 const STT_HINT = '자비스, 카카오톡, 톡캘린더, 구글 캘린더, 지메일, 일정, 알림, 메일, 검색, 브라우저, 유튜브, 네이버';
@@ -48,6 +52,8 @@ function send(channel, payload) {
 }
 
 async function confirm(message) {
+  // 아이폰에서 보낸 명령이면 확인 창도 아이폰에 띄웁니다.
+  if (mobileAsking && mobileServer) return mobileServer.requestConfirm(message);
   if (win) {
     if (win.isMinimized()) win.restore();
     win.show();
@@ -107,6 +113,81 @@ function buildTools() {
   ];
 }
 
+async function transcribeAudio(audio, purpose = 'command') {
+  const s = store.getSettings();
+  const progress = (pct, file) => send('stt-progress', { pct, file });
+  const cloud = s.sttProvider === 'openai';
+  const cloudOpts = { apiKey: store.getSecret('openai_api_key'), model: s.sttCloudModel, prompt: sttPrompt() };
+  if (!cloud) return stt.transcribe(audio, s.sttModel, progress);
+  if (purpose === 'wake') {
+    // 호출어는 내 컴퓨터의 가벼운 모델로 먼저 확인하고, 호출어가 있을 때만 클라우드로 정확히 다시 받아씁니다.
+    const quick = await stt.transcribe(audio, LOCAL_WAKE_MODEL, progress);
+    return stt.stripWakeWord(quick, wakeWords()) === null ? quick : stt.transcribeCloud(audio, cloudOpts);
+  }
+  return stt.transcribeCloud(audio, cloudOpts);
+}
+
+// ---- 아이폰 연결 ----
+function mobileToken() {
+  let t = store.getSecret('mobile_token');
+  if (!t) {
+    t = mobile.newToken();
+    store.setSecret('mobile_token', t);
+  }
+  return t;
+}
+
+async function stopMobile() {
+  if (!mobileServer) return;
+  const s = mobileServer;
+  mobileServer = null;
+  await s.close();
+}
+
+async function startMobile() {
+  await stopMobile();
+  mobileError = '';
+  const s = store.getSettings();
+  if (!s.mobileEnabled) return;
+  mobileToken();
+  const server = mobile.createMobileServer({
+    getToken: () => store.getSecret('mobile_token'),
+    ask: async (text) => {
+      mobileAsking = true;
+      try {
+        return await agent.ask(text, connections());
+      } finally {
+        mobileAsking = false;
+      }
+    },
+    transcribe: (audio) => transcribeAudio(audio, 'command'),
+    tts: (text) => tts.synthesize(text),
+    reset: () => agent.reset(),
+    info: () => ({ assistantName: store.getSettings().assistantName || '자비스', connections: connections() }),
+  });
+  try {
+    await server.listen(Number(s.mobilePort) || 5790);
+    mobileServer = server;
+  } catch (e) {
+    mobileError = e.code === 'EADDRINUSE' ? `포트 ${s.mobilePort}이(가) 이미 사용 중입니다. 다른 번호로 바꿔 보세요.` : e.message;
+  }
+}
+
+async function mobileInfo() {
+  const QRCode = require('qrcode');
+  const s = store.getSettings();
+  const port = Number(s.mobilePort) || 5790;
+  const token = s.mobileEnabled ? mobileToken() : '';
+  const urls = [];
+  if (mobileServer) {
+    for (const a of mobile.lanAddresses()) {
+      const url = `http://${a.address}:${port}/#k=${token}`;
+      urls.push({ ...a, url, qr: await QRCode.toDataURL(url, { margin: 1, width: 220 }) });
+    }
+  }
+  return { enabled: !!s.mobileEnabled, running: !!mobileServer, port, error: mobileError, token, urls };
+}
+
 function registerIpc() {
   ipcMain.handle('ask', async (_e, text) => {
     try {
@@ -122,21 +203,7 @@ function registerIpc() {
   ipcMain.handle('transcribe', async (_e, buffer, purpose = 'command') => {
     const t0 = Date.now();
     try {
-      const audio = new Float32Array(buffer);
-      const s = store.getSettings();
-      const progress = (pct, file) => send('stt-progress', { pct, file });
-      const cloud = s.sttProvider === 'openai';
-      const cloudOpts = { apiKey: store.getSecret('openai_api_key'), model: s.sttCloudModel, prompt: sttPrompt() };
-      let text;
-      if (!cloud) {
-        text = await stt.transcribe(audio, s.sttModel, progress);
-      } else if (purpose === 'wake') {
-        // 호출어는 내 컴퓨터의 가벼운 모델로 먼저 확인하고, 호출어가 있을 때만 클라우드로 정확히 다시 받아씁니다.
-        const quick = await stt.transcribe(audio, LOCAL_WAKE_MODEL, progress);
-        text = stt.stripWakeWord(quick, wakeWords()) === null ? quick : await stt.transcribeCloud(audio, cloudOpts);
-      } else {
-        text = await stt.transcribeCloud(audio, cloudOpts);
-      }
+      const text = await transcribeAudio(new Float32Array(buffer), purpose);
       return { ok: true, text, ms: Date.now() - t0 };
     } catch (e) {
       return { ok: false, error: `음성 인식 오류: ${e.message}`, ms: Date.now() - t0 };
@@ -176,7 +243,8 @@ function registerIpc() {
     hotkey: HOTKEY,
   }));
 
-  ipcMain.handle('settings:save', (_e, { settings = {}, secrets = {} }) => {
+  ipcMain.handle('settings:save', async (_e, { settings = {}, secrets = {} }) => {
+    const before = store.getSettings();
     const allowed = Object.keys(store.DEFAULT_SETTINGS);
     const clean = Object.fromEntries(Object.entries(settings).filter(([k]) => allowed.includes(k)));
     store.saveSettings(clean);
@@ -185,6 +253,10 @@ function registerIpc() {
     if (typeof secrets.kakaoSecret === 'string' && secrets.kakaoSecret) store.setSecret('kakao_client_secret', secrets.kakaoSecret.trim());
     if (typeof secrets.openai === 'string' && secrets.openai) store.setSecret('openai_api_key', secrets.openai.trim());
     if (typeof secrets.elevenlabs === 'string' && secrets.elevenlabs) store.setSecret('elevenlabs_api_key', secrets.elevenlabs.trim());
+    const after = store.getSettings();
+    if (before.mobileEnabled !== after.mobileEnabled || Number(before.mobilePort) !== Number(after.mobilePort) || !!after.mobileEnabled !== !!mobileServer) {
+      await startMobile();
+    }
     // 바뀐 음성 모델을 미리 불러 둡니다
     stt.getPipe(localSttModel(), (pct, file) => send('stt-progress', { pct, file })).then(
       () => send('stt-progress', { pct: 100, ready: true }),
@@ -215,6 +287,11 @@ function registerIpc() {
   ipcMain.handle('kakao:redirect-uri', () => kakao.REDIRECT_URI);
   ipcMain.handle('open-external', (_e, url) => (/^https?:/i.test(url) ? shell.openExternal(url) : null));
   ipcMain.handle('reminders:list', () => reminders.listReminders());
+  ipcMain.handle('mobile:info', () => mobileInfo());
+  ipcMain.handle('mobile:new-token', async () => {
+    store.setSecret('mobile_token', mobile.newToken());
+    return mobileInfo();
+  });
 }
 
 app.whenReady().then(async () => {
@@ -234,7 +311,11 @@ app.whenReady().then(async () => {
   agent = new Agent({
     tools: buildTools(),
     confirm,
-    onStatus: (s) => send('status', s),
+    onStatus: (s) => {
+      // 아이폰 명령은 아이폰에만 진행 상황을 보냅니다 (PC가 대신 말하거나 멈춘 화면이 되지 않게).
+      if (mobileAsking) mobileServer?.setStatus(s);
+      else send('status', s);
+    },
     computer,
     hooks: {
       // 화면을 조작하는 동안 자비스 창을 내려서, 다른 앱을 가리지 않게 합니다.
@@ -261,6 +342,7 @@ app.whenReady().then(async () => {
   app.on('will-quit', () => computer.stop());
   registerIpc();
   createWindow();
+  startMobile();
 
   reminders.startScheduler((r) => {
     if (Notification.isSupported()) new Notification({ title: '자비스 알림', body: r.text }).show();
@@ -287,6 +369,7 @@ app.whenReady().then(async () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  stopMobile();
   reminders.stopScheduler();
 });
 

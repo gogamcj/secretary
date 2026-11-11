@@ -16,7 +16,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
     "@huggingface/transformers": "^4.3.2",
-    "docx": "^9.5.1"
+    "docx": "^9.5.1",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "electron": "^45.2.3",

@@ -311,8 +311,8 @@
 
   // ---------- 설정 ----------
   const form = $('settings-form');
-  const FIELDS = ['userName', 'assistantName', 'model', 'effort', 'sttProvider', 'sttModel', 'sttCloudModel', 'ttsRate', 'sttHints', 'ttsProvider', 'ttsVoice', 'ttsCloudModel', 'ttsInstructions', 'elevenVoiceId', 'googleClientId', 'kakaoRestKey', 'documentsDir'];
-  const CHECKS = ['wakeWordEnabled', 'ttsEnabled', 'confirmRiskyActions', 'fastMode', 'webSearchEnabled', 'computerUseEnabled'];
+  const FIELDS = ['userName', 'assistantName', 'model', 'effort', 'sttProvider', 'sttModel', 'sttCloudModel', 'ttsRate', 'sttHints', 'ttsProvider', 'ttsVoice', 'ttsCloudModel', 'ttsInstructions', 'elevenVoiceId', 'googleClientId', 'kakaoRestKey', 'documentsDir', 'mobilePort'];
+  const CHECKS = ['wakeWordEnabled', 'ttsEnabled', 'confirmRiskyActions', 'fastMode', 'webSearchEnabled', 'computerUseEnabled', 'mobileEnabled'];
   const SECRETS = ['anthropic', 'googleSecret', 'kakaoSecret', 'openai', 'elevenlabs'];
 
   async function loadSettings() {
@@ -344,13 +344,50 @@
     setInd('ind-claude', data.secrets.anthropic, true);
     setInd('ind-google', data.connections.google);
     setInd('ind-kakao', data.connections.kakao);
+    renderMobile(await api.mobileInfo());
     return data;
+  }
+
+  function renderMobile(info) {
+    const conn = $('conn-mobile');
+    conn.textContent = info.running ? '● 켜짐' : '○ 꺼짐';
+    conn.className = `conn ${info.running ? 'on' : 'off'}`;
+    const box = $('mobile-box');
+    box.textContent = '';
+    if (info.error) {
+      const p = document.createElement('p');
+      p.className = 'help err';
+      p.textContent = info.error;
+      box.appendChild(p);
+    }
+    for (const u of info.urls || []) {
+      const card = document.createElement('div');
+      card.className = 'mobile-qr';
+      const img = document.createElement('img');
+      img.src = u.qr;
+      img.alt = 'QR 코드';
+      const cap = document.createElement('div');
+      cap.innerHTML = `<b></b><code></code>`;
+      cap.querySelector('b').textContent = u.tailscale ? 'Tailscale (밖에서도)' : `같은 와이파이 (${u.name})`;
+      cap.querySelector('code').textContent = u.url.replace(/#k=.*/, '');
+      card.append(img, cap);
+      box.appendChild(card);
+    }
+    if (info.running && info.token) {
+      const p = document.createElement('p');
+      p.className = 'help';
+      p.innerHTML = '연결 코드: <code class="select"></code>';
+      p.querySelector('code').textContent = info.token;
+      box.appendChild(p);
+    }
+    $('btn-mobile-token').disabled = !info.enabled;
   }
 
   async function saveSettings() {
     const next = {};
     for (const f of FIELDS) next[f] = form.elements[f].value.trim();
     next.ttsRate = Number(next.ttsRate) || 1.05;
+    next.mobilePort = Math.min(65535, Math.max(1024, Number(next.mobilePort) || 5790));
     for (const c of CHECKS) next[c] = form.elements[c].checked;
     const secrets = {};
     for (const s of SECRETS) if (form.elements[s].value.trim()) secrets[s] = form.elements[s].value.trim();
@@ -377,6 +414,10 @@
     $('settings').showModal();
   };
   $('btn-save').onclick = saveSettings;
+  $('btn-mobile-token').onclick = async () => {
+    if (!confirm('연결 코드를 새로 만들면 지금 연결된 휴대폰은 QR로 다시 연결해야 합니다. 계속할까요?')) return;
+    renderMobile(await api.mobileNewToken());
+  };
   $('btn-google').onclick = () => connectService(api.googleConnect, '구글');
   $('btn-kakao').onclick = () => connectService(api.kakaoConnect, '카카오');
   $('btn-google-off').onclick = async () => (await api.googleDisconnect(), loadSettings());

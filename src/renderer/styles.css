@@ -187,3 +187,10 @@ legend { color: var(--cyan); font-size: 13px; padding: 0 6px; }
   .hint { display: none; }
 }
 .settings textarea { resize: vertical; }
+
+.mobile-box { display: flex; flex-wrap: wrap; gap: 12px; }
+.mobile-qr { display: flex; gap: 12px; align-items: center; padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
+.mobile-qr img { width: 120px; height: 120px; background: #fff; border-radius: 4px; }
+.mobile-qr div { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.mobile-qr code, code.select { user-select: text; word-break: break-all; }
+.help.err { color: var(--red); }
